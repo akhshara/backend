@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -9,15 +11,18 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import social
 from .emails import EmailNotSent, send_password_reset_email, send_verification_email
 from .serializers import (
     ChangePasswordSerializer,
     EmailSerializer,
+    GoogleCredentialSerializer,
     LoginSerializer,
     LogoutSerializer,
     PasswordResetConfirmSerializer,
     PublicUserSerializer,
     RegisterSerializer,
+    SocialAccountSerializer,
     UserSerializer,
     VerifyEmailSerializer,
 )
@@ -142,3 +147,47 @@ class MeView(generics.RetrieveUpdateAPIView):
 class PublicUserView(generics.RetrieveAPIView):
     queryset = User.objects.filter(is_active=True)
     serializer_class = PublicUserSerializer
+
+
+class GoogleLoginView(APIView):
+    """Signs in with Google, creating the account on first use.
+
+    Same response as `LoginView`: `access` and `refresh` tokens plus the user.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "auth"
+
+    def post(self, request):
+        serializer = GoogleCredentialSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = social.user_for_google(serializer.validated_data["profile"])
+        refresh = RefreshToken.for_user(user)
+        update_last_login(None, user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserSerializer(user, context={"request": request}).data,
+            }
+        )
+
+
+class GoogleConnectView(APIView):
+    """Links a Google account to the signed-in user."""
+
+    throttle_scope = "auth"
+
+    def post(self, request):
+        serializer = GoogleCredentialSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        account = social.connect_google(request.user, serializer.validated_data["profile"])
+        return Response(SocialAccountSerializer(account).data, status=status.HTTP_201_CREATED)
+
+
+class SocialDisconnectView(APIView):
+    """Unlinks one of the signed-in user's `providers`."""
+
+    def delete(self, request, pk):
+        social.disconnect(get_object_or_404(request.user.social_accounts, pk=pk))
+        return Response(status=status.HTTP_204_NO_CONTENT)

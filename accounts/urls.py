@@ -22,5 +22,12 @@ urlpatterns = [
         views.PasswordResetConfirmView.as_view(),
         name="password-reset-confirm",
     ),
+    path("social/google/", views.GoogleLoginView.as_view(), name="google-login"),
+    path("social/google/connect/", views.GoogleConnectView.as_view(), name="google-connect"),
+    path(
+        "social/disconnect/<int:pk>/",
+        views.SocialDisconnectView.as_view(),
+        name="social-disconnect",
+    ),
     path("users/<int:pk>/", views.PublicUserView.as_view(), name="user-detail"),
 ]

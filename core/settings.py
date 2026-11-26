@@ -153,6 +153,11 @@ UNIVERSITY_EMAIL_DOMAINS = env_list("UNIVERSITY_EMAIL_DOMAINS", "university.edu"
 # Frontend URL used to build links in verification / password reset emails.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
+# "Sign in with Google" (OAuth web client from Google Cloud Console -> Credentials).
+# The secret is only needed to exchange authorization codes (POST /api/auth/social/google/).
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+
 # External ISBN metadata lookup.
 ISBN_LOOKUP_TIMEOUT = float(os.environ.get("ISBN_LOOKUP_TIMEOUT", "4"))
 
