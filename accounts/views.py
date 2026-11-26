@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.db import transaction
-from rest_framework import generics, status
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -9,15 +12,18 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import social
 from .emails import EmailNotSent, send_password_reset_email, send_verification_email
 from .serializers import (
     ChangePasswordSerializer,
     EmailSerializer,
+    GoogleCredentialSerializer,
     LoginSerializer,
     LogoutSerializer,
     PasswordResetConfirmSerializer,
     PublicUserSerializer,
     RegisterSerializer,
+    SocialAccountSerializer,
     UserSerializer,
     VerifyEmailSerializer,
 )
@@ -26,6 +32,19 @@ from .tokens import revoke_refresh_tokens
 User = get_user_model()
 
 GENERIC_EMAIL_RESPONSE = {"detail": "If an account exists for that email, a message has been sent."}
+
+
+DetailResponse = inline_serializer(
+    "AccountDetailResponse", fields={"detail": serializers.CharField()}
+)
+TokenResponse = inline_serializer(
+    "AccountTokenResponse",
+    fields={
+        "access": serializers.CharField(),
+        "refresh": serializers.CharField(),
+        "user": UserSerializer(),
+    },
+)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -41,6 +60,7 @@ class RegisterView(generics.CreateAPIView):
             raise EmailNotSent()
 
 
+@extend_schema_view(post=extend_schema(request=LoginSerializer, responses=TokenResponse))
 class LoginView(TokenObtainPairView):
     """Returns `access` and `refresh` tokens plus the user."""
 
@@ -52,6 +72,7 @@ class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=VerifyEmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -65,6 +86,7 @@ class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=EmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -80,6 +102,7 @@ class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=EmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -95,6 +118,7 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=PasswordResetConfirmSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -106,6 +130,7 @@ class PasswordResetConfirmView(APIView):
 
 
 class ChangePasswordView(APIView):
+    @extend_schema(request=ChangePasswordSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -118,6 +143,7 @@ class ChangePasswordView(APIView):
 class LogoutView(APIView):
     """Revokes the given refresh token."""
 
+    @extend_schema(request=LogoutSerializer, responses={204: None})
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -142,3 +168,50 @@ class MeView(generics.RetrieveUpdateAPIView):
 class PublicUserView(generics.RetrieveAPIView):
     queryset = User.objects.filter(is_active=True)
     serializer_class = PublicUserSerializer
+
+
+class GoogleLoginView(APIView):
+    """Signs in with Google, creating the account on first use.
+
+    Same response as `LoginView`: `access` and `refresh` tokens plus the user.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "auth"
+
+    @extend_schema(request=GoogleCredentialSerializer, responses=TokenResponse)
+    def post(self, request):
+        serializer = GoogleCredentialSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = social.user_for_google(serializer.validated_data["profile"])
+        refresh = RefreshToken.for_user(user)
+        update_last_login(None, user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserSerializer(user, context={"request": request}).data,
+            }
+        )
+
+
+class GoogleConnectView(APIView):
+    """Links a Google account to the signed-in user."""
+
+    throttle_scope = "auth"
+
+    @extend_schema(request=GoogleCredentialSerializer, responses={201: SocialAccountSerializer})
+    def post(self, request):
+        serializer = GoogleCredentialSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        account = social.connect_google(request.user, serializer.validated_data["profile"])
+        return Response(SocialAccountSerializer(account).data, status=status.HTTP_201_CREATED)
+
+
+class SocialDisconnectView(APIView):
+    """Unlinks one of the signed-in user's `providers`."""
+
+    @extend_schema(responses={204: None})
+    def delete(self, request, pk):
+        social.disconnect(get_object_or_404(request.user.social_accounts, pk=pk))
+        return Response(status=status.HTTP_204_NO_CONTENT)

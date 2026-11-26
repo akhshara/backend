@@ -35,3 +35,26 @@ class User(AbstractUser):
 
     def get_short_name(self):
         return self.full_name.split(" ")[0] if self.full_name else self.email
+
+
+class SocialAccount(models.Model):
+    """A third-party identity (e.g. a Google account) the user can sign in with."""
+
+    class Provider(models.TextChoices):
+        GOOGLE = "google", "Google"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="social_accounts")
+    provider = models.CharField(max_length=20, choices=Provider.choices)
+    uid = models.CharField(max_length=255, help_text="The provider's stable account id.")
+    email = models.EmailField(help_text="The provider account's email when it was linked.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "uid"], name="unique_provider_account"),
+            models.UniqueConstraint(fields=["user", "provider"], name="one_account_per_provider"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_provider_display()}: {self.email}"

@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Count
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from books.models import Listing
@@ -98,6 +99,7 @@ class StudentDetailSerializer(StudentSerializer):
     class Meta(StudentSerializer.Meta):
         fields = [*StudentSerializer.Meta.fields, "recent_listings"]
 
+    @extend_schema_field(StudentListingSerializer(many=True))
     def get_recent_listings(self, student):
         return StudentListingSerializer(student_listings(student)[:5], many=True).data
 

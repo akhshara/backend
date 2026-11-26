@@ -7,6 +7,7 @@ from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -208,10 +209,15 @@ class SlideViewSet(SuperAdminMixin, viewsets.ModelViewSet):
 class HomeSectionsView(SuperAdminMixin, APIView):
     """GET every home page section in order; PUT the full list to change order and visibility."""
 
+    @extend_schema(responses=serializers.HomeSectionSerializer(many=True))
     def get(self, request):
         sections = HomeSection.objects.all()
         return Response(serializers.HomeSectionSerializer(sections, many=True).data)
 
+    @extend_schema(
+        request=serializers.HomeSectionsSerializer,
+        responses=serializers.HomeSectionSerializer(many=True),
+    )
     def put(self, request):
         serializer = serializers.HomeSectionsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -223,12 +229,21 @@ class HomeSectionContentView(SuperAdminMixin, APIView):
     """PUT a section's text, every field filled in (see cms/content.py). DELETE goes back
     to the site's built-in text."""
 
+    @extend_schema(
+        request=PolymorphicProxySerializer(
+            component_name="HomeSectionContent",
+            serializers=list(CONTENT_SERIALIZERS.values()),
+            resource_type_field_name=None,
+        ),
+        responses=serializers.HomeSectionSerializer,
+    )
     def put(self, request, kind):
         section = get_object_or_404(HomeSection, kind=kind)
         content = CONTENT_SERIALIZERS[section.kind](data=request.data)
         content.is_valid(raise_exception=True)
         return self._save(section, content.validated_data)
 
+    @extend_schema(responses=serializers.HomeSectionSerializer)
     def delete(self, request, kind):
         return self._save(get_object_or_404(HomeSection, kind=kind), {})
 
@@ -241,5 +256,13 @@ class HomeSectionContentView(SuperAdminMixin, APIView):
 class CampusView(SuperAdminMixin, APIView):
     """Campus-wide settings that come from the server configuration."""
 
+    @extend_schema(
+        responses={
+            200: {
+                "type": "object",
+                "properties": {"email_domains": {"type": "array", "items": {"type": "string"}}},
+            }
+        }
+    )
     def get(self, request):
         return Response({"email_domains": settings.UNIVERSITY_EMAIL_DOMAINS})

@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
+from .models import Conversation
 from .serializers import ConversationSerializer, MessageSerializer
 
 
@@ -18,6 +19,8 @@ class ConversationViewSet(
     filterset_fields = ["listing"]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Conversation.objects.none()
         return services.conversations_for(self.request.user)
 
     def create(self, request, *args, **kwargs):
