@@ -50,6 +50,14 @@ def _link_by_email(profile):
     if not profile.email_verified:
         raise ValidationError("Your Google email address is not verified.")
 
+    # Google may have verified a third-party address only when the Google account
+    # was created. Require mailbox verification through AKSARA for those addresses.
+    if not profile.has_authoritative_email:
+        raise ValidationError(
+            "Google could not confirm current ownership of this email address. "
+            "Use your university email and password to sign in or create an account."
+        )
+
     user = User.objects.select_for_update().filter(email__iexact=profile.email).first()
     if user is None:
         try:

@@ -56,6 +56,13 @@ class GoogleProfile:
     email: str
     email_verified: bool
     name: str
+    hosted_domain: str = ""
+
+    @property
+    def has_authoritative_email(self):
+        return self.email_verified and (
+            self.email.endswith("@gmail.com") or bool(self.hosted_domain)
+        )
 
 
 def _client_id():
@@ -93,6 +100,7 @@ def _profile(claims):
         # ID tokens and userinfo carry a boolean, tokeninfo the string "true".
         email_verified=verified is True or verified == "true",
         name=(claims.get("name") or "").strip(),
+        hosted_domain=claims.get("hd") or "",
     )
 
 

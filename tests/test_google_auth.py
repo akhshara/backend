@@ -58,6 +58,7 @@ def google_user(settings, monkeypatch):
         "sub": "1234567890",
         "email": "ada@university.edu",
         "email_verified": True,
+        "hd": "university.edu",
         "name": "Ada Lovelace",
     }
     monkeypatch.setattr(
@@ -175,6 +176,22 @@ def test_unverified_google_email_is_refused(sign_in, google_user):
     assert resp.data["detail"] == "Your Google email address is not verified."
 
 
+@pytest.mark.parametrize("existing_account", [False, True])
+def test_non_hosted_email_cannot_create_or_link_an_account(
+    sign_in, google_user, make_user, existing_account
+):
+    google_user.pop("hd")
+    if existing_account:
+        make_user(email=google_user["email"])
+
+    resp = sign_in()
+
+    assert resp.status_code == 400
+    assert "current ownership" in resp.data["detail"]
+    assert User.objects.count() == int(existing_account)
+    assert not SocialAccount.objects.exists()
+
+
 def test_long_google_name_is_shortened_to_fit(sign_in, google_user):
     google_user["name"] = "A" * 300
 
@@ -213,7 +230,9 @@ def test_concurrent_first_sign_in_gets_the_account_the_other_request_created(
         return resolve(profile)
 
     monkeypatch.setattr(social, "_resolve_google_user", lose_the_race)
-    profile = google.GoogleProfile("1234567890", "ada@university.edu", True, "Ada")
+    profile = google.GoogleProfile(
+        "1234567890", "ada@university.edu", True, "Ada", "university.edu"
+    )
 
     user = social.user_for_google(profile)
 
