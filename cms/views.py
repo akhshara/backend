@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -24,6 +25,7 @@ class VisibleHomeSectionList(APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(responses={200: {"type": "array", "items": {"type": "string"}}})
     def get(self, request):
         kinds = HomeSection.objects.filter(is_enabled=True).values_list("kind", flat=True)
         return Response(list(kinds))
@@ -35,6 +37,7 @@ class HomeContentView(APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(responses={200: {"type": "object", "additionalProperties": {"type": "object"}}})
     def get(self, request):
         saved = HomeSection.objects.exclude(content={}).values_list("kind", "content")
         return Response(dict(saved))

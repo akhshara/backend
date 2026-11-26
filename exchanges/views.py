@@ -25,6 +25,8 @@ class ExchangeRequestViewSet(
     ordering_fields = ["created_at", "responded_at"]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return ExchangeRequest.objects.none()
         user = self.request.user
         return (
             ExchangeRequest.objects.filter(Q(requester=user) | Q(listing__seller=user))

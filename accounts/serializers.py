@@ -9,6 +9,8 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from utilities.validators import validate_image_size
 
+from . import google
+from .models import SocialAccount
 from .tokens import email_verification_token
 from .validators import validate_university_email
 
@@ -48,8 +50,19 @@ class RegisterSerializer(serializers.ModelSerializer):
         return User.objects.create_user(**validated_data)
 
 
+class SocialAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SocialAccount
+        fields = ["id", "provider", "email"]
+
+
 class UserSerializer(serializers.ModelSerializer):
     """The authenticated user's own profile."""
+
+    providers = SocialAccountSerializer(source="social_accounts", many=True, read_only=True)
+    # False for accounts created with Google: they must set a password (via password
+    # reset) before they can disconnect Google or sign in with email and password.
+    has_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -64,9 +77,14 @@ class UserSerializer(serializers.ModelSerializer):
             "is_email_verified",
             "is_superuser",
             "date_joined",
+            "has_password",
+            "providers",
         ]
         read_only_fields = ["id", "email", "is_email_verified", "is_superuser", "date_joined"]
         extra_kwargs = {"avatar": {"validators": [validate_image_size]}}
+
+    def get_has_password(self, user) -> bool:
+        return user.has_usable_password()
 
 
 class PublicUserSerializer(serializers.ModelSerializer):
@@ -146,3 +164,30 @@ class LoginSerializer(TokenObtainPairSerializer):
             )
         data["user"] = UserSerializer(self.user, context=self.context).data
         return data
+
+
+class GoogleCredentialSerializer(serializers.Serializer):
+    """Exactly one credential from Google Identity Services; resolves to a `profile`."""
+
+    code = serializers.CharField(required=False, max_length=1024)
+    # The popup code flow uses "postmessage"; a redirect flow sends its own redirect URI.
+    redirect_uri = serializers.CharField(required=False, default="postmessage", max_length=2048)
+    id_token = serializers.CharField(required=False, max_length=4096)
+    access_token = serializers.CharField(required=False, max_length=4096)
+
+    CREDENTIALS = ("code", "id_token", "access_token")
+
+    def validate(self, attrs):
+        given = [name for name in self.CREDENTIALS if attrs.get(name)]
+        if len(given) != 1:
+            raise serializers.ValidationError(
+                "Send exactly one of `code`, `id_token` or `access_token`."
+            )
+        # A credential Google rejects raises GoogleAuthError: a 400 with {"detail": "..."}.
+        if attrs.get("code"):
+            profile = google.profile_from_code(attrs["code"], attrs["redirect_uri"])
+        elif attrs.get("id_token"):
+            profile = google.profile_from_id_token(attrs["id_token"])
+        else:
+            profile = google.profile_from_access_token(attrs["access_token"])
+        return {"profile": profile}
