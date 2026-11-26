@@ -83,7 +83,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "email", "is_email_verified", "is_superuser", "date_joined"]
         extra_kwargs = {"avatar": {"validators": [validate_image_size]}}
 
-    def get_has_password(self, user):
+    def get_has_password(self, user) -> bool:
         return user.has_usable_password()
 
 

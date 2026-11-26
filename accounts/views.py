@@ -2,7 +2,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, status
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,6 +34,19 @@ User = get_user_model()
 GENERIC_EMAIL_RESPONSE = {"detail": "If an account exists for that email, a message has been sent."}
 
 
+DetailResponse = inline_serializer(
+    "AccountDetailResponse", fields={"detail": serializers.CharField()}
+)
+TokenResponse = inline_serializer(
+    "AccountTokenResponse",
+    fields={
+        "access": serializers.CharField(),
+        "refresh": serializers.CharField(),
+        "user": UserSerializer(),
+    },
+)
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -46,6 +60,7 @@ class RegisterView(generics.CreateAPIView):
             raise EmailNotSent()
 
 
+@extend_schema_view(post=extend_schema(request=LoginSerializer, responses=TokenResponse))
 class LoginView(TokenObtainPairView):
     """Returns `access` and `refresh` tokens plus the user."""
 
@@ -57,6 +72,7 @@ class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=VerifyEmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -70,6 +86,7 @@ class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=EmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -85,6 +102,7 @@ class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=EmailSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -100,6 +118,7 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=PasswordResetConfirmSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -111,6 +130,7 @@ class PasswordResetConfirmView(APIView):
 
 
 class ChangePasswordView(APIView):
+    @extend_schema(request=ChangePasswordSerializer, responses=DetailResponse)
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -123,6 +143,7 @@ class ChangePasswordView(APIView):
 class LogoutView(APIView):
     """Revokes the given refresh token."""
 
+    @extend_schema(request=LogoutSerializer, responses={204: None})
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -158,6 +179,7 @@ class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "auth"
 
+    @extend_schema(request=GoogleCredentialSerializer, responses=TokenResponse)
     def post(self, request):
         serializer = GoogleCredentialSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -178,6 +200,7 @@ class GoogleConnectView(APIView):
 
     throttle_scope = "auth"
 
+    @extend_schema(request=GoogleCredentialSerializer, responses={201: SocialAccountSerializer})
     def post(self, request):
         serializer = GoogleCredentialSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -188,6 +211,7 @@ class GoogleConnectView(APIView):
 class SocialDisconnectView(APIView):
     """Unlinks one of the signed-in user's `providers`."""
 
+    @extend_schema(responses={204: None})
     def delete(self, request, pk):
         social.disconnect(get_object_or_404(request.user.social_accounts, pk=pk))
         return Response(status=status.HTTP_204_NO_CONTENT)

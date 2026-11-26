@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party
     "rest_framework",
+    "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "corsheaders",
@@ -182,6 +183,7 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "AKSARA <no-reply@loca
 # --- REST framework --------------------------------------------------------------
 
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
@@ -206,6 +208,17 @@ REST_FRAMEWORK = {
         "user": os.environ.get("THROTTLE_USER", "600/min"),
         "auth": os.environ.get("THROTTLE_AUTH", "10/min"),
     },
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "AKSARA API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "ListingStatusEnum": "books.models.Listing.Status",
+        "ExchangeRequestStatusEnum": "exchanges.models.ExchangeRequest.Status",
+    },
+    "COMPONENT_SPLIT_REQUEST": True,
 }
 
 SIMPLE_JWT = {
